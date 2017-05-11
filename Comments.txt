@@ -1,0 +1,79 @@
+I'll start by seconding the use of the logging module and the use of os.path functions.
+
+Ok, the first thing I'm seeing is that you're running geoprocessing tools while having a cursor open. That is going to eat both time and memory, and is probably one of your bottlenecks. This specifically caught my eye:
+
+    # Make a feature layer from Holdings Layer#
+    arcpy.MakeFeatureLayer_management(Holdings, 'Holdings_Layer')
+
+    # searchcursor for evey row in dataset to interrogate Holdings Ref nuber#
+    with arcpy.da.SearchCursor(Holdings,
+            ['Holding_Reference_Number'])as Holdings_Ref_cursor:
+        for row in Holdings_Ref_cursor:
+            print row[0]
+            query = "Holding_Reference_Number = " + str(row[0])
+            print query
+            File_output = file_workspace + '\\' 'Buffer_' + str(row[0])
+            # print File_output
+
+            # Select Feature using the reference number from holdings layer
+            arcpy.SelectLayerByAttribute_management('Holdings_Layer', 'NEW_SELECTION',
+                "Holding_Reference_Number = " + str( row[0]))
+
+            # Export holding to geodatabase
+            Holding_Boundary = file_workspace + '\\' 'Holding_' + str(row[0])
+            arcpy.management.CopyFeatures('Holdings_Layer', Holding_Boundary)
+
+Since you're repeatedly using the reference number, you want to make references to it as easy and fast as possible. My suggestion is to put it in a dictionary; it'll use a bit more memory, but your concern is running time, not memory usage.
+
+Second, there's several of these processes that can be more efficiently done in using a single tool. For example:
+
+    arcpy.MakeFeatureLayer_management(Holdings, 'Holdings_Layer')
+    ...
+    # Select Feature using the reference number from holdings layer
+    arcpy.SelectLayerByAttribute_management('Holdings_Layer', 'NEW_SELECTION',
+        "Holding_Reference_Number = " + str( row[0]))
+
+    # Export holding to geodatabase
+    Holding_Boundary = file_workspace + '\\' 'Holding_' + str(row[0])
+    arcpy.management.CopyFeatures('Holdings_Layer', Holding_Boundary)
+
+Instead of creating a layer and using the layer select tools, try using the Select tool from the Analysis toolbox (arcpy.Select_analysis), which automatically creates a new feature class from the selection. In which case the above becomes:
+
+    arcpy.analysis.Select(Holdings, Holding_Boundary,
+        "Holding_Reference_Number = {0}".format(ref))
+
+Third, file I/O is a time suck. Something you might want to consider is storing your log messages in a dictionary, then use the logging module to write to file once. Minimizing file access is a good thing.
+
+Fourth, you've got several intermediate geoprocessing steps; instead of writing the tool results to a file, use the in_memory workspace.
+
+Fifth, running scripts from your IDE will slow them down.
+
+I ginned up some test data to play around with -- 30 polygon features, about 900 polylines, and replicated some of your process--acquire row reference numbers, select polygons, export them to geodatabase, and intersect the polylines with the selected polygons. Then I ran variations of the script, to see what really affected the times. I discovered the following:
+
+    Breaking out of the search cursor as early as possible and using a dictionary to store the row data from the cursor cuts down on time by 20-30%.
+    Running the script from the terminal window instead of the IDE cuts the running time by another 30-40%.
+    Moving intermediate processing steps into the in-memory workspace cuts the running time in half.
+
+With these changes, running through the same suite of test data, the running time went from roughly 120 seconds to 40 seconds.
+
+Here's an example of what the snippet I focused on upthread might look like, cleaned up and implementing these suggestions:
+
+    Holdings_References = {}
+
+    # searchcursor for evey row in dataset to interrogate Holdings Ref nuber#
+    with arcpy.da.SearchCursor(Holdings,
+            ['Holding_Reference_Number'])as Holdings_Ref_cursor:
+        for row in Holdings_Ref_cursor:
+        Holdings_References[row[0]] = row[0]
+
+    for ref in Holdings_References.viewkeys():
+        query = "Holding_Reference_Number = {0}".format(ref)
+        print query
+        File_output = os.path.join(file_workspace, "Buffer_{0}".format(ref))
+        # print File_output
+
+        # Select Feature using the reference number from holdings layer and
+        # Export holding to geodatabase
+        Holding_Boundary = os.path.join("in_memory", "Holding_{0}".format(ref))
+        arcpy.analysis.Select(Holdings, Holding_Boundary,
+        "Holding_Reference_Number = {0}".format(ref))
