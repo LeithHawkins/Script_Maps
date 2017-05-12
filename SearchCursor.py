@@ -1,6 +1,8 @@
 import arcpy
 from arcpy import env
+import time
 
+start = time.time()
 arcpy.env.overwriteOutput = True
 # Set File workspace
 file_workspace = 'B:\\Risk\\Risk.gdb'
@@ -14,6 +16,9 @@ unit = "Meters"
 # Make a feature layer from Holdings Layer#
 
 arcpy.MakeFeatureLayer_management(Holdings, 'Holdings_Layer')
+end = time.time()
+print (end - start)
+
 
 # searchcursor for evey row in dataset to interrogate Holdings Ref nuber#
 with arcpy.da.SearchCursor(Holdings, ['Holding_Reference_Number'])as Holdings_Ref_cursor:
@@ -27,7 +32,7 @@ with arcpy.da.SearchCursor(Holdings, ['Holding_Reference_Number'])as Holdings_Re
         # Select Feature using the reference number from holdings layer
         arcpy.SelectLayerByAttribute_management('Holdings_Layer', 'NEW_SELECTION',
                                                 "Holding_Reference_Number = " + str(row[0]))
-
+        start = time.time()
         # Export holding to geodatabase
         Holding_Boundary = file_workspace + '\\' 'Holding_' + str(row[0])
         arcpy.management.CopyFeatures('Holdings_Layer', Holding_Boundary)
@@ -63,14 +68,15 @@ with arcpy.da.SearchCursor(Holdings, ['Holding_Reference_Number'])as Holdings_Re
             Clip_output, Dissolved_output, Dissolve_fields)
 
         # Export to Excel
-        #Make Feature Layer Based on Disoveled Output Intersect and Dissolved Layer
+        # Make Feature Layer Based on Disoveled Output Intersect and Dissolved
+        # Layer
 
         arcpy.MakeFeatureLayer_management(
             Dissolved_output_intersect, 'Intersect_Layer')
         arcpy.MakeFeatureLayer_management(Dissolved_output, 'Dissolve_layer')
 
         Intersect_Selection_Excel = 'distance = 1000'
-        #export selected records to excel
+        # export selected records to excel
         arcpy.SelectLayerByAttribute_management(
             'Intersect_Layer', 'NEW_SELECTION', Intersect_Selection_Excel)
         Excel_Output = 'B:\\Risk\\Map_Output\\Map_output_2\\'
@@ -79,7 +85,9 @@ with arcpy.da.SearchCursor(Holdings, ['Holding_Reference_Number'])as Holdings_Re
         arcpy.TableToExcel_conversion('Intersect_Layer', Excel_Location)
         # arcpy.SelectLayerByAttribute_management('Intersect_Layer', 'CLEAR_SELECTION')
         print 'Geoprocessing Complete'
-
+        end = time.time()
+        print (end - start)
+        start = time.time()
         # add Layers to the Map
         mxd = arcpy.mapping.MapDocument(
             'N:\\GIS\Projects\\AA_Leith_Hawkins_TestBed\\Search_Cursor\\Search_Cursor_mxd.mxd')
@@ -131,9 +139,12 @@ with arcpy.da.SearchCursor(Holdings, ['Holding_Reference_Number'])as Holdings_Re
         arcpy.mapping.ExportToPNG(mxd, Png_output)
         # print 'Map Created'
         del mxd
-
+        end = time.time()
+        print (end - start)
         f = open('B:\\Risk\\Risk.txt', "a")
         f.write(datetime.datetime.now().ctime())  # openlogfile
         f.write('Holding_Reference_Number = ' + ' ' + str(row[0]) + '\n')
         f.close()
         print "Moving to Next Row"
+end = time.time()
+print (end - start)
