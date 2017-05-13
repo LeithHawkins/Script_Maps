@@ -1,139 +1,78 @@
 import arcpy
 from arcpy import env
+import time
 
-arcpy.env.overwriteOutput = True
-# Set File workspace
-file_workspace = 'B:\\Risk\\Risk.gdb'
-env.workspace = file_workspace
-
-# buffer set up
-Holdings = 'B:\\Risk\\Risk.gdb\\Holdings\\Holdings_Join'
-Holdings_clip = 'B:\\Risk\\Risk.gdb\\Holdings\\Holdings'
+# Settings
+baseDirectory = 'C:\\Users\\Rowan\\Desktop\\files'
+file_workspace = baseDirectory + '\\Rowan.gdb'
+Holdings = file_workspace + '\\Holdings_Join'
+Holdings_clip = file_workspace + '\\Holdings'
 distances = [1000, 4000]
 unit = "Meters"
-# Make a feature layer from Holdings Layer#
+
+# # ArcPy settings
+arcpy.env.overwriteOutput = True
+env.workspace = file_workspace
 
 arcpy.MakeFeatureLayer_management(Holdings, 'Holdings_Layer')
 
-# searchcursor for evey row in dataset to interrogate Holdings Ref nuber#
+mxd = arcpy.mapping.MapDocument(baseDirectory + '\\Search_Cursor_mxd.mxd')
+df = arcpy.mapping.ListDataFrames(mxd, "Layers")[0]
+legend = arcpy.mapping.ListLayoutElements(mxd, "LEGEND_ELEMENT", "Legend")[0]
+legend.autoAdd = True
+
+
+def addLayerToMxd(layer_location, lyr_file_location, show_labels):
+    layer = arcpy.mapping.Layer(layer_location)
+    arcpy.ApplySymbologyFromLayer_management(layer, baseDirectory + lyr_file_location)
+    layer.showLabels = show_labels
+    arcpy.mapping.AddLayer(df, layer, 'TOP')
+
+
 with arcpy.da.SearchCursor(Holdings, ['Holding_Reference_Number'])as Holdings_Ref_cursor:
     for row in Holdings_Ref_cursor:
-        print row[0]
-        query = "Holding_Reference_Number = " + str(row[0])
-        print query
-        File_output = file_workspace + '\\' 'Buffer_' + str(row[0])
-        # print File_output
 
-        # Select Feature using the reference number from holdings layer
-        arcpy.SelectLayerByAttribute_management('Holdings_Layer', 'NEW_SELECTION',
-                                                "Holding_Reference_Number = " + str(row[0]))
+        start = time.time()
+        refNumber = str(row[0])
+        print 'Holding:' + refNumber
 
-        # Export holding to geodatabase
-        Holding_Boundary = file_workspace + '\\' 'Holding_' + str(row[0])
-        arcpy.management.CopyFeatures('Holdings_Layer', Holding_Boundary)
+        # Select the holding (eg a definition query)
+        arcpy.Select_analysis('Holdings_Layer', 'in_memory/holding', "Holding_Reference_Number = " + refNumber)
 
-        # Mutliple ring Buffer using Selected Features
-        arcpy.MultipleRingBuffer_analysis(
-            'Holdings_Layer', File_output, distances, unit, "", "ALL")
-        arcpy.MakeFeatureLayer_management(File_output, 'Buffer_Layer')
-        # arcpy.Buffer_analysis("Holdings_Layer", ofc, var_Buffer, "FULL", "ROUND", "ALL", "")
+        arcpy.MultipleRingBuffer_analysis('in_memory/holding', 'in_memory/buffer', distances, unit, "", "ALL")
 
-        # Clip Holdings Buffer
+        arcpy.Intersect_analysis([Holdings_clip, 'in_memory/buffer'], 'in_memory/intersect', "", "", "INPUT")
 
-        # Intersect Features
-        Intersect_out_features = file_workspace + \
-            '\\' 'Intersect_' + str(row[0])
-        arcpy.Intersect_analysis(
-            [Holdings_clip, File_output], Intersect_out_features, "", "", "INPUT")
-        Dissolved_output_intersect = file_workspace + \
-            '\\' 'Intersect_Dissolve_' + str(row[0])
+        arcpy.Dissolve_management('in_memory/intersect', 'in_memory/intersectDissolved', ['Holding_Name', 'distance'])
 
-        # Dissolve Fields based on Holding name and Distance
-        Dissolve_fields_intersect = ['Holding_Name', 'distance']
+        arcpy.Clip_analysis(Holdings_clip, 'in_memory/buffer', 'in_memory/clip')
 
-        arcpy.Dissolve_management(
-            Intersect_out_features, Dissolved_output_intersect, Dissolve_fields_intersect)
-
-        Clip_output = file_workspace + '\\' 'Clip_' + str(row[0])
-        arcpy.Clip_analysis(Holdings_clip, File_output, Clip_output)
-        Dissolve_fields = ['Holding_Name']
-        Dissolved_output = file_workspace + '\\' 'Dissolve_' + str(row[0])
-        # print Dissolved_output
-        arcpy.Dissolve_management(
-            Clip_output, Dissolved_output, Dissolve_fields)
+        arcpy.Dissolve_management('in_memory/clip', 'in_memory/dissolvedOutput', ['Holding_Name'])
 
         # Export to Excel
-        #Make Feature Layer Based on Disoveled Output Intersect and Dissolved Layer
+        arcpy.MakeFeatureLayer_management('in_memory/intersectDissolved', 'Intersect_Layer')
 
-        arcpy.MakeFeatureLayer_management(
-            Dissolved_output_intersect, 'Intersect_Layer')
-        arcpy.MakeFeatureLayer_management(Dissolved_output, 'Dissolve_layer')
+        arcpy.SelectLayerByAttribute_management('Intersect_Layer', 'NEW_SELECTION', 'distance=1000')
 
-        Intersect_Selection_Excel = 'distance = 1000'
-        #export selected records to excel
-        arcpy.SelectLayerByAttribute_management(
-            'Intersect_Layer', 'NEW_SELECTION', Intersect_Selection_Excel)
-        Excel_Output = 'B:\\Risk\\Map_Output\\Map_output_2\\'
-        Excel_Location = Excel_Output + '\\' + str(row[0]) + '.xls'
-        # print Excel_Location
-        arcpy.TableToExcel_conversion('Intersect_Layer', Excel_Location)
-        # arcpy.SelectLayerByAttribute_management('Intersect_Layer', 'CLEAR_SELECTION')
-        print 'Geoprocessing Complete'
+        arcpy.TableToExcel_conversion('Intersect_Layer', baseDirectory + '\\blah' + refNumber + '.xls')
 
-        # add Layers to the Map
-        mxd = arcpy.mapping.MapDocument(
-            'N:\\GIS\Projects\\AA_Leith_Hawkins_TestBed\\Search_Cursor\\Search_Cursor_mxd.mxd')
-        df = arcpy.mapping.ListDataFrames(mxd, "Layers")[0]
-        legend = arcpy.mapping.ListLayoutElements(
-            mxd, "LEGEND_ELEMENT", "Legend")[0]
-        # print legend
-        legend.autoAdd = False
+        # Add the layers to the mxd
+        addLayerToMxd('in_memory/dissolvedOutput', '\\Intersect.lyr', True)
+        addLayerToMxd('in_memory/buffer', '\\Buffer.lyr', False)
+        addLayerToMxd('in_memory/holding', '\\Holding.lyr', False)
 
-        addLayer3 = arcpy.mapping.Layer(Dissolved_output)
-        arcpy.ApplySymbologyFromLayer_management(addLayer3,
-                                                 'C:\\Database_connections\\assesment_Model_lyr\\Intersect_3.lyr')
-        addLayer3.showLabels = True
-        arcpy.mapping.AddLayer(df, addLayer3, 'TOP')
-
-        legend.autoAdd = True
-        addLayer = arcpy.mapping.Layer(File_output)
-        arcpy.ApplySymbologyFromLayer_management(
-            addLayer, 'C:\\Database_connections\\assesment_Model_lyr\\Buffer.lyr')
-        arcpy.mapping.AddLayer(df, addLayer, "TOP")
-
-        addLayer2 = arcpy.mapping.Layer(Holding_Boundary)
-        arcpy.ApplySymbologyFromLayer_management(addLayer2,
-                                                 'C:\\Database_connections\\assesment_Model_lyr\\Holding.lyr')
-        arcpy.mapping.AddLayer(df, addLayer2, "TOP")
-
-        legend.autoAdd = False
         arcpy.RefreshActiveView()
         arcpy.RefreshTOC()
 
-        # zoom to layer
-
-        # print df
+        # Zoom to the extent of the holding
         lyr = arcpy.mapping.ListLayers(mxd, '', df)[1]
-        # print lyr.name
-        extent = lyr.getExtent()
-        # print extent
-        df.extent = extent
+        df.extent = lyr.getExtent()
 
         # Adding Title to MXD
-        Map_title = "Holding Reference Number : " + ' ' + str(row[0])
-        titleItem = arcpy.mapping.ListLayoutElements(
-            mxd, 'TEXT_ELEMENT', '')[0]
-        titleItem.text = Map_title
+        titleItem = arcpy.mapping.ListLayoutElements(mxd, 'TEXT_ELEMENT', '')[0]
+        titleItem.text = "Holding Reference Number : " + ' ' + refNumber
 
         # Export Map to PNG File
-        Png_output = 'B:\\Risk\\Map_Output\\Map_output_2\\' + \
-            str(row[0]) + '.png'
-        arcpy.mapping.ExportToPNG(mxd, Png_output)
-        # print 'Map Created'
-        del mxd
+        arcpy.mapping.ExportToPNG(mxd, baseDirectory + '\\' + refNumber + '.png')
 
-        f = open('B:\\Risk\\Risk.txt', "a")
-        f.write(datetime.datetime.now().ctime())  # openlogfile
-        f.write('Holding_Reference_Number = ' + ' ' + str(row[0]) + '\n')
-        f.close()
-        print "Moving to Next Row"
+        print('Complete: ' + str(time.time() - start))
