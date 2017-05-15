@@ -31,6 +31,7 @@ print (end - start)
 # searchcursor for evey row in dataset to interrogate Holdings Ref nuber#
 with arcpy.da.SearchCursor(Holdings, ['Holding_Reference_Number'])as Holdings_Ref_cursor:
     for row in Holdings_Ref_cursor:
+<<<<<<< HEAD
         print row[0]
         query = "Holding_Reference_Number = " + str(row[0])
         print query
@@ -75,6 +76,33 @@ with arcpy.da.SearchCursor(Holdings, ['Holding_Reference_Number'])as Holdings_Re
         arcpy.Dissolve_management(
             Clip_output, Dissolved_output, Dissolve_fields)
 
+=======
+        start = time.time()
+        refNumber = str(row[0])
+        print 'Holding:' + refNumber
+
+        # Select the holding (eg a definition query)
+        arcpy.Select_analysis('Holdings_Layer', 'in_memory/holding', "Holding_Reference_Number = " + refNumber)
+
+        arcpy.Buffer_analysis('in_memory/holding', 'in_memory/buffer1km', "1000 Meters", "FULL", "ROUND", "ALL")
+        arcpy.AddField_management("in_memory/buffer1km", "distance", "SHORT")
+        arcpy.CalculateField_management("in_memory/buffer1km", "distance", 1)
+
+        arcpy.Buffer_analysis('in_memory/holding', 'in_memory/buffer4km', "4000 Meters", "FULL", "ROUND", "ALL")
+        arcpy.AddField_management("in_memory/buffer4km", "distance", "SHORT")
+        arcpy.CalculateField_management("in_memory/buffer4km", "distance", 4)
+
+        arcpy.Merge_management(["in_memory/buffer1km", "in_memory/buffer4km"], "in_memory/buffer")
+
+
+        arcpy.Intersect_analysis([Holdings_clip, 'in_memory/buffer'], 'in_memory/intersect', "", "", "INPUT")
+
+        arcpy.Dissolve_management('in_memory/intersect', 'in_memory/intersectDissolved', ['Holding_Name', 'distance'])
+
+        arcpy.Clip_analysis(Holdings_clip, 'in_memory/buffer', 'in_memory/clip')
+
+        arcpy.Dissolve_management('in_memory/clip', 'in_memory/dissolvedOutput', ['Holding_Name'])
+>>>>>>> 3ec4552a5b239db1bbb35c9eefdb8d2998c6b84b
         # Export to Excel
         # Make Feature Layer Based on Disoveled Output Intersect and Dissolved
         # Layer
@@ -144,6 +172,7 @@ with arcpy.da.SearchCursor(Holdings, ['Holding_Reference_Number'])as Holdings_Re
         titleItem.text = Map_title
 
         # Export Map to PNG File
+<<<<<<< HEAD
         Png_output = 'B:\\Risk\\Map_Output\\Map_output_2\\' + \
             str(row[0]) + '.png'
         arcpy.mapping.ExportToPNG(mxd, Png_output)
@@ -158,3 +187,7 @@ with arcpy.da.SearchCursor(Holdings, ['Holding_Reference_Number'])as Holdings_Re
         print "Moving to Next Row"
 # end = time.time()
 # print (end - start)
+=======
+        arcpy.mapping.ExportToPNG(mxd, baseDirectory + '\\' + refNumber + '.png')
+        print('Time: ' + str(time.time() - start))
+>>>>>>> 3ec4552a5b239db1bbb35c9eefdb8d2998c6b84b
