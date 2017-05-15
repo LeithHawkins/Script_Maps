@@ -31,7 +31,6 @@ def addLayerToMxd(layer_location, lyr_file_location, show_labels):
 
 with arcpy.da.SearchCursor(Holdings, ['Holding_Reference_Number'])as Holdings_Ref_cursor:
     for row in Holdings_Ref_cursor:
-
         start = time.time()
         refNumber = str(row[0])
         print 'Holding:' + refNumber
@@ -39,7 +38,16 @@ with arcpy.da.SearchCursor(Holdings, ['Holding_Reference_Number'])as Holdings_Re
         # Select the holding (eg a definition query)
         arcpy.Select_analysis('Holdings_Layer', 'in_memory/holding', "Holding_Reference_Number = " + refNumber)
 
-        arcpy.MultipleRingBuffer_analysis('in_memory/holding', 'in_memory/buffer', distances, unit, "", "ALL")
+        arcpy.Buffer_analysis('in_memory/holding', 'in_memory/buffer1km', "1000 Meters", "FULL", "ROUND", "ALL")
+        arcpy.AddField_management("in_memory/buffer1km", "distance", "SHORT")
+        arcpy.CalculateField_management("in_memory/buffer1km", "distance", 1)
+
+        arcpy.Buffer_analysis('in_memory/holding', 'in_memory/buffer4km', "4000 Meters", "FULL", "ROUND", "ALL")
+        arcpy.AddField_management("in_memory/buffer4km", "distance", "SHORT")
+        arcpy.CalculateField_management("in_memory/buffer4km", "distance", 4)
+
+        arcpy.Merge_management(["in_memory/buffer1km", "in_memory/buffer4km"], "in_memory/buffer")
+
 
         arcpy.Intersect_analysis([Holdings_clip, 'in_memory/buffer'], 'in_memory/intersect', "", "", "INPUT")
 
@@ -48,7 +56,6 @@ with arcpy.da.SearchCursor(Holdings, ['Holding_Reference_Number'])as Holdings_Re
         arcpy.Clip_analysis(Holdings_clip, 'in_memory/buffer', 'in_memory/clip')
 
         arcpy.Dissolve_management('in_memory/clip', 'in_memory/dissolvedOutput', ['Holding_Name'])
-
         # Export to Excel
         arcpy.MakeFeatureLayer_management('in_memory/intersectDissolved', 'Intersect_Layer')
 
@@ -74,5 +81,4 @@ with arcpy.da.SearchCursor(Holdings, ['Holding_Reference_Number'])as Holdings_Re
 
         # Export Map to PNG File
         arcpy.mapping.ExportToPNG(mxd, baseDirectory + '\\' + refNumber + '.png')
-
-        print('Complete: ' + str(time.time() - start))
+        print('Time: ' + str(time.time() - start))
